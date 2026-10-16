@@ -181,7 +181,7 @@ textarea{resize:vertical;line-height:1.5}
 <script>
 "use strict";
 /* NIYOZ OS 0.1 — core */
-const VER="0.1.0";
+const VER="0.2.3";
 const MONTHS=["yanvar","fevral","mart","aprel","may","iyun","iyul","avgust","sentabr","oktabr","noyabr","dekabr"];
 const WDS=["Du","Se","Ch","Pa","Ju","Sh","Ya"];
 const DAYN=["Yakshanba","Dushanba","Seshanba","Chorshanba","Payshanba","Juma","Shanba"];
@@ -299,7 +299,7 @@ function secs(){
 const ST={sec:"home",v:{}};
 const V=(k,d)=>ST.v[k]||(ST.v[k]=d);
 const ACTS={},FORMS={},INPUTS={},CHANGES={},VIEWS={},CALCLICK={};
-let FORMCTX=null,CONFIRM=null,PINCB=null,TOASTFN=null,tt=null;
+let FORMCTX=null,CONFIRM=null,PINCB=null,TOASTFN=null,tt=null,MODALST=null,DISCARD=null,PINC=false;
 function toast(m,act){
  const t=$("#toast");if(!t)return;
  t.innerHTML="<span>"+esc(m)+"</span>"+(act?'<button data-act="tundo">'+esc(act.label)+"</button>":"");
@@ -309,11 +309,11 @@ ACTS.tundo=()=>{const f=TOASTFN;TOASTFN=null;$("#toast").classList.remove("show"
 function modal(html){
  closeModal();const m=document.createElement("div");m.className="mback";
  m.innerHTML='<div class="sheet" role="dialog" aria-modal="true">'+html+"</div>";
- m.addEventListener("click",e=>{if(e.target===m)closeModal();});
- document.body.appendChild(m);document.body.classList.add("noscroll");return m;
+ m.addEventListener("click",e=>{if(e.target===m)modalBack();});
+ document.body.appendChild(m);document.body.classList.add("noscroll");MODALST={kind:"plain"};return m;
 }
-function closeModal(){const m=$(".mback");if(m)m.remove();document.body.classList.remove("noscroll");}
-ACTS.mclose=()=>closeModal();
+function closeModal(){const m=$(".mback");if(m)m.remove();MODALST=null;if(typeof closeDiscard==="function")closeDiscard();document.body.classList.remove("noscroll");}
+ACTS.mclose=()=>modalBack();
 function confirmBox(title,text,okLabel,cb,danger){
  modal('<div class="sh-head"><h3>'+esc(title)+'</h3></div><div class="ctext">'+text+'</div><div class="btns"><button class="btn'+(danger?" dng":"")+'" data-act="cok">'+esc(okLabel)+'</button><button class="btn ghost" data-act="mclose">Bekor qilish</button></div>');
  CONFIRM=cb;
@@ -354,7 +354,7 @@ function readForm(fields,form){
 function openForm(o){
  const v=o.vals||{};
  const m=modal('<div class="sh-head"><h3>'+esc(o.title)+'</h3><button class="x" data-act="mclose" aria-label="Yopish">'+ico("x")+'</button></div><form data-form="gen" novalidate>'+o.fields.map(f=>fieldHTML(f,v[f.k])).join("")+(o.extra||"")+'<p class="err" role="alert"></p><div class="btns"><button class="btn" type="submit">'+esc(o.submit||"Saqlash")+"</button>"+(o.del?'<button class="btn ghost danger" type="button" data-act="mdel">'+esc(o.del.label)+"</button>":"")+"</div></form>");
- FORMCTX={o,form:m.querySelector("form")};return m;
+ FORMCTX={o,form:m.querySelector("form")};MODALST={kind:"form",sig:formSig(FORMCTX.form)};return m;
 }
 FORMS.gen=form=>{
  const c=FORMCTX;if(!c)return;
@@ -410,7 +410,7 @@ const hasCrypto=()=>!!(globalThis.crypto&&crypto.subtle);
 function askPin(title,cancelable,ok){
  const ov=$("#lock");ov.hidden=false;
  ov.innerHTML='<div class="lockbox">'+LOGO.replace('class="logo"','class="logo done"')+"<h2>"+esc(title)+'</h2><form data-form="pin"><input class="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" name="pin" aria-label="PIN-kod"><p class="err" role="alert"></p><div class="btns" style="justify-content:center"><button class="btn" type="submit">Ochish</button>'+(cancelable?'<button type="button" class="btn ghost" data-act="pincancel">Bekor qilish</button>':"")+"</div></form></div>";
- PINCB=ok;const i=ov.querySelector("input");if(i&&i.focus)i.focus();
+ PINCB=ok;PINC=!!cancelable;const i=ov.querySelector("input");if(i&&i.focus)i.focus();
 }
 FORMS.pin=async f=>{
  const err=f.querySelector(".err");
@@ -448,6 +448,7 @@ function render(){
  $("#main").innerHTML=(showTop?'<header class="top"><h1>'+esc(titleOf(id))+'</h1><button class="iconbtn" data-act="search" aria-label="Qidiruv">'+ico("search")+"</button></header>":"")+warn+body;
  $("#nav").innerHTML=navHTML();
  if(typeof window!=="undefined"&&window.scrollTo)window.scrollTo(0,y);
+ try{trackNav();}catch(e){console.error(e);}
 }
 function go(id){
  closeModal();
@@ -467,7 +468,111 @@ document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest
 document.addEventListener("submit",e=>{e.preventDefault();const f=FORMS[e.target.dataset.form];if(f)f(e.target,e);});
 document.addEventListener("input",e=>{const k=e.target.dataset&&e.target.dataset.inp;if(k&&INPUTS[k])INPUTS[k](e.target,e);});
 document.addEventListener("change",e=>{const k=e.target.dataset&&e.target.dataset.chg;if(k&&CHANGES[k])CHANGES[k](e.target,e);});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&$(".mback"))closeModal();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&(MODALST||DISCARD))modalBack();});
+
+/* ---------- Android Back / brauzer Back: ilovaning ichki navigatsiyasi bilan bir butun ----------
+   Usul: brauzer tarixida doim bitta «qo'riqchi» yozuv turadi. Back bosilganda brauzer shu yozuvdan qaytadi
+   va popstate ishga tushadi. Ilova o'zi hal qiladi (oyna yopish, ichki sahifaga qaytish yoki chiqish
+   ogohlantirishi), keyin qo'riqchi yozuvni qayta qo'yadi. Ichki tarix (NAV.stack) ilovaning o'zida saqlanadi. */
+const NAV={stack:[],cur:null,curSnap:null,restoring:false,armed:false,exitUntil:0,exitTimer:null};
+/* qaysi bo'limda qaysi ichki holat «sahifa» hisoblanadi (filtr va qidiruv emas, faqat joy) */
+const SECKEYS={finance:["fin",["tab","sav"]],fitness:["fit",["tab"]],nutrition:["nut",["tab"]],project:["proj",["id"]],journal:["j",["nb","pg"]],settings:["set",["sub"]]};
+function navSnap(){
+ const p={},d=SECKEYS[ST.sec];
+ if(d&&ST.v[d[0]])d[1].forEach(f=>{const v=ST.v[d[0]][f];p[f]=v===undefined?null:v;});
+ return {sec:ST.sec,p};
+}
+/* render() oxirida chaqiriladi: joy o'zgargan bo'lsa, oldingi joyni tarixga qo'shadi.
+   Agar yangi joy tarixdagi oxirgi joy bilan bir xil bo'lsa (ilovadagi «orqaga» tugmasi), tarixdan olib tashlaydi. */
+function trackNav(){
+ const snap=navSnap(),key=JSON.stringify(snap);
+ if(NAV.cur===null){NAV.cur=key;NAV.curSnap=snap;return;}
+ if(key===NAV.cur)return;
+ if(!NAV.restoring){
+  const top=NAV.stack[NAV.stack.length-1];
+  if(top&&JSON.stringify(top)===key)NAV.stack.pop();
+  else{NAV.stack.push(NAV.curSnap);if(NAV.stack.length>50)NAV.stack.shift();}
+ }
+ NAV.cur=key;NAV.curSnap=snap;
+}
+/* o'chirilgan yoki qulflangan joyga qaytmaslik uchun */
+function navValid(snap){
+ const alive=id=>{if(!id)return true;const r=DB.get(id);return !!r&&!r.d;},p=snap.p||{};
+ if(!secs().some(x=>x.id===snap.sec))return false;
+ if(snap.sec.indexOf("m:")===0&&!alive(snap.sec.slice(2)))return false;
+ if((snap.sec==="finance"||snap.sec==="journal")&&needsLock(snap.sec))return false;
+ if(snap.sec==="finance"&&!alive(p.sav))return false;
+ if(snap.sec==="project"&&!alive(p.id))return false;
+ if(snap.sec==="journal"){if(!alive(p.nb)||!alive(p.pg))return false;if(p.nb&&needsLock("nb:"+p.nb))return false;}
+ return true;
+}
+function navRestore(snap){
+ if(typeof jflush==="function")jflush();   /* Journal matni yo'qolmasin */
+ NAV.restoring=true;
+ try{
+  ST.sec=snap.sec;const d=SECKEYS[snap.sec];
+  if(d&&ST.v[d[0]]&&snap.p)d[1].forEach(f=>{if(snap.p[f]!==undefined)ST.v[d[0]][f]=snap.p[f];});
+  if(snap.sec==="journal"&&ST.v.j)ST.v.j.prev=false;
+  render();
+ }finally{NAV.restoring=false;}
+}
+
+/* forma ma'lumoti o'zgarganmi */
+function formSig(f){
+ const o=[];
+ for(const e of Array.from((f&&f.elements)||[])){if(!e.name)continue;o.push(e.name+"="+((e.type==="checkbox"||e.type==="radio")?(e.checked?1:0):e.value));}
+ return o.join("&");
+}
+const formDirty=()=>!!(MODALST&&MODALST.kind==="form"&&FORMCTX&&FORMCTX.form&&MODALST.sig!==formSig(FORMCTX.form));
+function closeDiscard(){if(DISCARD){DISCARD.remove();DISCARD=null;}}
+function askDiscard(){
+ closeDiscard();
+ const m=document.createElement("div");m.className="mback";m.dataset.discard="1";
+ m.innerHTML='<div class="sheet" role="alertdialog" aria-modal="true"><div class="sh-head"><h3>Saqlanmagan o\'zgarishlar bor</h3></div><div class="ctext">Oynani yopsangiz, kiritilgan ma\'lumot yo\'qoladi.</div><div class="btns"><button class="btn" data-act="dkeep">Davom etish</button><button class="btn ghost danger" data-act="ddiscard">Yopish</button></div></div>';
+ document.body.appendChild(m);DISCARD=m;
+}
+ACTS.dkeep=()=>closeDiscard();
+ACTS.ddiscard=()=>{closeDiscard();closeModal();};
+/* oyna, dialog va forma uchun Back: true = qatlam yopildi yoki o'zgardi */
+function modalBack(){
+ if(DISCARD){closeDiscard();return true;}
+ if(!MODALST)return false;
+ if(MODALST.kind==="txnconfirm"&&PEND){ACTS.fback();return true;}   /* tasdiqlash oynasidan formaga qaytadi, ma'lumot saqlanmaydi */
+ if(MODALST.kind==="form"&&formDirty()){askDiscard();return true;}
+ closeModal();return true;
+}
+/* Back bosilganda nima bo'lishini hal qiladi: "closed" | "nav" | "root" */
+function handleBack(){
+ const lk=$("#lock");
+ if(lk&&!lk.hidden){if(PINC){ACTS.pincancel();return "closed";}return "root";}
+ if(DISCARD||MODALST){modalBack();return "closed";}
+ while(NAV.stack.length){const s=NAV.stack.pop();if(navValid(s)){navRestore(s);return "nav";}}
+ if(ST.sec!=="home"){navRestore({sec:"home",p:{}});return "nav";}
+ return "root";
+}
+function armGuard(){
+ NAV.exitUntil=0;clearTimeout(NAV.exitTimer);
+ if(NAV.armed)return;
+ try{history.pushState({niyoz:1},"");NAV.armed=true;}catch(e){}
+}
+function onPop(e){
+ if(e&&e.state&&e.state.niyoz===1){NAV.armed=true;return;}   /* «oldinga» tugmasi bilan qo'riqchiga chiqildi */
+ NAV.armed=false;
+ if(Date.now()<NAV.exitUntil){try{history.back();}catch(_){}return;}   /* ogohlantirishdan keyingi ikkinchi bosish */
+ const r=handleBack();
+ if(r==="root"){
+  NAV.exitUntil=Date.now()+2500;
+  toast("Chiqish uchun Orqaga tugmasini yana bir marta bosing");
+  clearTimeout(NAV.exitTimer);NAV.exitTimer=setTimeout(()=>{armGuard();},2600);   /* qo'riqchi qayta qo'yilmasa, ikkinchi Back ilovadan chiqaradi */
+ }else armGuard();
+}
+function initBackGuard(){
+ try{history.replaceState({niyoz:0},"");}catch(e){}
+ /* brauzer foydalanuvchi bosishisiz qo'shilgan tarix yozuvlarini o'tkazib yuborishi mumkin, shuning uchun birinchi bosishdan keyin qo'yamiz */
+ const arm=()=>{if(!NAV.armed)armGuard();};
+ ["pointerdown","touchstart","keydown"].forEach(t=>addEventListener(t,arm,{capture:true,passive:true}));
+ addEventListener("popstate",onPop);
+}
 
 /* ---------- Reja (vazifalar) ---------- */
 const PRI={1:["Past","#7B8794"],2:["O'rta","#F5B942"],3:["Yuqori","#FF5C5C"]};
@@ -633,7 +738,7 @@ function txnConfirm(v,id){
  const s=v.sav?savs().find(x=>x.id===v.sav):null,isS=v.kind==="save"||v.kind==="withdraw";
  let after="";if(isS&&s)after="<li>Jamg'arma yangi balansi: <b>"+money(savBal(s.id,id)+(v.kind==="save"?v.amount:-v.amount))+" so'm</b></li>";
  modal('<div class="sh-head"><h3>Tasdiqlang</h3></div><ul class="sum"><li>Turi: <b>'+esc(KINDS[v.kind])+"</b></li><li>Summa: <b>"+money(v.amount)+" so'm</b></li>"+(isS&&s?"<li>Jamg'arma: <b>"+esc(s.name)+"</b></li>":"")+"<li>Sana: <b>"+fmtD(v.date)+"</b></li>"+(v.cat?"<li>Kategoriya: <b>"+esc(v.cat)+"</b></li>":"")+(v.note?"<li>Izoh: <b>"+esc(v.note)+"</b></li>":"")+after+'</ul><p class="note">Tasdiqlamaguncha hech narsa saqlanmaydi.</p><div class="btns"><button class="btn" data-act="fok">Tasdiqlash</button><button class="btn ghost" data-act="fback">Orqaga</button></div>');
- PEND={v,id};
+ PEND={v,id};if(MODALST)MODALST.kind="txnconfirm";
 }
 ACTS.fok=()=>{
  if(!PEND)return;const {v,id}=PEND;PEND=null;
@@ -1476,7 +1581,7 @@ ACTS.locktg=b=>{const c=CFG(),k=b.dataset.k;c.lock[k]=c.lock[k]?0:1;DB.put(c);re
 async function init(){
  await DB.init();CFG();try{migrate();}catch(e){console.error(e);}
  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();}catch(e){}
- render();appLockNow();
+ render();appLockNow();initBackGuard();
  document.addEventListener("visibilitychange",()=>{
   if(document.hidden){hiddenAt=Date.now();if(typeof jflush==="function")jflush();}
   else if(hiddenAt&&Date.now()-hiddenAt>60000)appLockNow();
